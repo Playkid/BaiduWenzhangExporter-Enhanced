@@ -1,0 +1,42 @@
+# 百度文章备份工具 — .gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+
+# 虚拟环境
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 输出文件（抓取结果，不应提交到仓库）
+baidu_articles_RAW.csv
+baidu_articles_SORTED.csv
+baidu_wordpress_import_FINAL.xml
+md_output/
+txt_output/
+
+# 系统文件
+Thumbs.db
+.DS_Store
+Desktop.ini
+
+# 安全敏感文件
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
