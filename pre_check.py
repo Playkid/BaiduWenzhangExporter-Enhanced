@@ -68,9 +68,9 @@ print("  ✅ 无锁文件（已清除或可正常启动）" if not has_lock else
 print("\n[4/5] 检查 Edge 进程...")
 result = subprocess.run(
     'tasklist /FI "IMAGENAME eq msedge.exe" /FO CSV /NH',
-    shell=True, capture_output=True, text=True
+    shell=True, capture_output=True, encoding='gbk', errors='replace'
 )
-lines = [l for l in result.stdout.strip().split('\n') if l.strip() and 'INFO' not in l]
+lines = [l for l in (result.stdout or '').strip().split('\n') if l.strip() and 'INFO' not in l]
 if lines:
     print(f"  ⚠️ 发现 {len(lines)} 个 Edge 进程正在运行：")
     for l in lines[:3]:
@@ -82,9 +82,9 @@ if lines:
     time.sleep(3)
     result2 = subprocess.run(
         'tasklist /FI "IMAGENAME eq msedge.exe" /FO CSV /NH',
-        shell=True, capture_output=True, text=True
+        shell=True, capture_output=True, encoding='gbk', errors='replace'
     )
-    remaining = [l for l in result2.stdout.strip().split('\n') if l.strip() and 'INFO' not in l]
+    remaining = [l for l in (result2.stdout or '').strip().split('\n') if l.strip() and 'INFO' not in l]
     if remaining:
         print(f"  ❌ 仍有 {len(remaining)} 个进程无法清除，请手动关闭 Edge")
     else:

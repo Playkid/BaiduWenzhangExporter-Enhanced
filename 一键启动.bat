@@ -1,5 +1,5 @@
 @echo off
-chcp 65001 >nul 2>&1
+chcp 936 >nul 2>&1
 cd /d "%~dp0"
 title 百度文章备份工具
 

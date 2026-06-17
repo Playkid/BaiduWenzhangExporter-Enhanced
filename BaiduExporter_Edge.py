@@ -49,8 +49,8 @@ def kill_edge_processes():
 
     # 验证: 是否还有残留进程
     result = subprocess.run("tasklist /FI \"IMAGENAME eq msedge.exe\" /FO CSV /NH",
-                           shell=True, capture_output=True, text=True)
-    if result.stdout.strip() and "INFO" not in result.stdout:
+                           shell=True, capture_output=True, encoding='gbk', errors='replace')
+    if (result.stdout or '').strip() and "INFO" not in (result.stdout or ''):
         print("  ⚠️ 仍有 Edge 进程残留，再次尝试...")
         subprocess.run("taskkill /F /IM msedge.exe /T", shell=True, capture_output=True)
         time.sleep(2)
@@ -77,13 +77,34 @@ def kill_edge_processes():
             pass
     print("  ✅ 进程清理完成")
 
+def find_existing_driver():
+    """查找系统上已有的 msedgedriver.exe（无需联网）"""
+    import glob as _glob
+    search_paths = [
+        # webdriver-manager 缓存
+        os.path.join(os.path.expanduser("~"), ".wdm", "drivers", "edgedriver", "win64", "**", "msedgedriver.exe"),
+        # Edge 安装目录自带
+        os.path.join(os.environ.get("PROGRAMFILES", ""), "Microsoft", "Edge", "Application", "msedgedriver.exe"),
+        os.path.join(os.environ.get("ProgramFiles(x86)", ""), "Microsoft", "Edge", "Application", "msedgedriver.exe"),
+        # 常见自定义路径
+        os.path.join(os.path.expanduser("~"), "msedgedriver.exe"),
+    ]
+    for pattern in search_paths:
+        if "**" in pattern:
+            matches = sorted(_glob.glob(pattern, recursive=True), reverse=True)
+        else:
+            matches = [pattern] if os.path.exists(pattern) else []
+        for m in matches:
+            if m and os.path.isfile(m):
+                return m
+    return None
+
 def setup_edge_driver():
     """配置 Edge 浏览器，使用已登录的 Profile"""
     # 先杀掉所有 Edge 进程
     kill_edge_processes()
     
     options = Options()
-    # 关键修复：移除 --no-sandbox，用这些安全标志替代
     options.add_argument("--no-first-run")
     options.add_argument("--no-default-browser-check")
     options.add_argument("--disable-gpu")
@@ -97,21 +118,50 @@ def setup_edge_driver():
     
     errors = []
     
-    # 尝试1: 使用自动安装的 EdgeDriver
+    # 尝试1: 查找本地已有的 msedgedriver（无需联网）
+    existing_driver = find_existing_driver()
+    if existing_driver:
+        print(f"  尝试方法1: 使用已有驱动 {existing_driver}...")
+        try:
+            svc = Service(executable_path=existing_driver)
+            driver = webdriver.Edge(service=svc, options=options)
+            print("  ✅ Edge 启动成功！")
+            driver.set_page_load_timeout(30)
+            driver.maximize_window()
+            return driver
+        except Exception as e:
+            errors.append(f"方法1: {str(e)[:100]}")
+            print(f"  ❌ 方法1 失败")
+    else:
+        print("  未找到已有驱动，跳过方法1")
+    
+    # 尝试2: Selenium 自动检测（无需联网，自动匹配 Edge 版本）
+    print("  尝试方法2: Selenium 自动检测驱动...")
     try:
-        print("  尝试方法1: 自动安装 EdgeDriver...")
-        service = Service(EdgeChromiumDriverManager().install())
-        driver = webdriver.Edge(service=service, options=options)
+        driver = webdriver.Edge(options=options)
         print("  ✅ Edge 启动成功！")
         driver.set_page_load_timeout(30)
         driver.maximize_window()
         return driver
     except Exception as e:
-        errors.append(f"方法1: {str(e)[:100]}")
-        print(f"  ❌ 方法1 失败")
+        errors.append(f"方法2: {str(e)[:100]}")
+        print(f"  ❌ 方法2 失败")
     
-    # 尝试2: 不用 user-data-dir，手动登录
-    print("  尝试方法2: 不带 Profile 启动 (需手动登录)...")
+    # 尝试3: webdriver-manager 在线下载（需要网络）
+    print("  尝试方法3: 在线下载 EdgeDriver...")
+    try:
+        svc = Service(EdgeChromiumDriverManager().install())
+        driver = webdriver.Edge(service=svc, options=options)
+        print("  ✅ Edge 启动成功！")
+        driver.set_page_load_timeout(30)
+        driver.maximize_window()
+        return driver
+    except Exception as e:
+        errors.append(f"方法3: {str(e)[:100]}")
+        print(f"  ❌ 方法3 失败")
+    
+    # 尝试4: 不带 Profile，手动登录 + Selenium 自动检测
+    print("  尝试方法4: 不带 Profile，手动登录...")
     options2 = Options()
     options2.add_argument("--no-first-run")
     options2.add_argument("--no-default-browser-check")
@@ -123,16 +173,14 @@ def setup_edge_driver():
     options2.page_load_strategy = 'eager'
     
     try:
-        # 复用 webdriver_manager 安装的驱动（避免 PATH 找不到的问题）
-        service2 = Service(EdgeChromiumDriverManager().install())
-        driver = webdriver.Edge(service=service2, options=options2)
+        driver = webdriver.Edge(options=options2)
         print("  ✅ Edge 启动成功 (需手动登录百度)")
         driver.set_page_load_timeout(30)
         driver.maximize_window()
         return driver
     except Exception as e:
-        errors.append(f"方法2: {str(e)[:100]}")
-        print(f"  ❌ 方法2 也失败")
+        errors.append(f"方法4: {str(e)[:100]}")
+        print(f"  ❌ 方法4 也失败")
     
     # 全部失败
     print(f"\n❌ 所有方法都失败了！错误信息:")
@@ -140,8 +188,7 @@ def setup_edge_driver():
         print(f"  - {err}")
     print(f"\n可能的原因:")
     print(f"  1. Edge 浏览器未正确安装")
-    print(f"  2. EdgeDriver 与 Edge 版本不匹配")
-    print(f"  3. 系统权限不足")
+    print(f"  2. 系统权限不足")
     print(f"\n建议: 尝试选项 [1] Chrome版抓取（需安装Chrome浏览器）")
     sys.exit(1)
 
